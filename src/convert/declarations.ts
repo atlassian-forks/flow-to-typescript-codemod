@@ -1,6 +1,5 @@
 import * as t from "@babel/types";
-import traverse from "@babel/traverse";
-
+import traverse, { NodePath } from "@babel/traverse";
 import {
   replaceWith,
   inheritLocAndComments,
@@ -9,6 +8,7 @@ import {
   getLoc,
 } from "./utils/common";
 import { migrateType } from "./migrate/type";
+import { migrateFunctionParameters } from "./migrate/function-parameter";
 import {
   migrateTypeParameterDeclaration,
   migrateTypeParameterInstantiation,
@@ -62,6 +62,61 @@ const updateReactImports = (
   }
 };
 
+const updateRelayImports = (path: NodePath<t.ImportDeclaration>) => {
+  path.parentPath.traverse({
+    CallExpression(cxPath) {
+      // useLazyLoadQuery<Query$variables, Query$data>(...) -> useLazyLoadQuery<Query>(...)
+      if (t.isIdentifier(cxPath.node.callee, { name: "useLazyLoadQuery" })) {
+        const varsSpecifier = path.node.specifiers.find(
+          (s) =>
+            s.type === "ImportSpecifier" &&
+            s.imported.type === "Identifier" &&
+            /\w+\$variables$/.test(s.imported.name)
+        ) as any;
+        const dataSpecifier = path.node.specifiers.find(
+          (s) =>
+            s.type === "ImportSpecifier" &&
+            s.imported.type === "Identifier" &&
+            /\w+\$data$/.test(s.imported.name)
+        );
+        const importName = varsSpecifier?.imported.name.replace(
+          "$variables",
+          ""
+        );
+        const typeSpecifier = path.node.specifiers.find(
+          (s) =>
+            s.type === "ImportSpecifier" &&
+            s.imported.type === "Identifier" &&
+            s.imported.name === importName
+        )?.local.name;
+
+        if (!typeSpecifier) {
+          if (varsSpecifier) {
+            varsSpecifier.imported.name = importName;
+            delete varsSpecifier.local;
+          }
+        } else {
+          path.node.specifiers = path.node.specifiers.filter(
+            (s) => s !== varsSpecifier
+          );
+        }
+        if (varsSpecifier) {
+          path.node.specifiers = path.node.specifiers.filter(
+            (s) => s !== dataSpecifier
+          );
+        }
+
+        // if import replacement happened
+        if (importName != null && cxPath.node.typeParameters) {
+          cxPath.node.typeParameters.params = [
+            t.tsTypeReference(t.identifier(typeSpecifier ?? importName)),
+          ];
+        }
+      }
+    },
+  });
+};
+
 export function transformDeclarations({
   reporter,
   state,
@@ -73,7 +128,9 @@ export function transformDeclarations({
     ImportDeclaration(path) {
       // `import typeof X from` => `import {...} from`
       if (path.node.importKind === "typeof") {
-        path.node.importKind = "value";
+        path.node.extra ??= {};
+        path.node.extra.wasImportTypeOf = true;
+        path.node.importKind = "type";
       }
 
       // `import X from `foo.js` -> extension warning
@@ -101,17 +158,26 @@ export function transformDeclarations({
       // `import {...} from`
       if (path.node.specifiers) {
         for (const specifier of path.node.specifiers) {
+          // `import {typeof...} from`
+          if (
+            specifier.type === "ImportSpecifier" &&
+            specifier.importKind === "typeof"
+          ) {
+            specifier.extra ??= {};
+            specifier.extra.wasImportTypeOf = true;
+            specifier.importKind = "type";
+          }
+
           if (
             specifier.type === "ImportSpecifier" &&
             (specifier.importKind === "type" || path.node.importKind === "type")
           ) {
             updateReactImports(path.node, specifier);
-
-            // `import {type X} from` => `import {X} from`
-            if (specifier.importKind === "type") {
-              specifier.importKind = null;
-            }
           }
+        }
+
+        if (path.node.source.value.endsWith(".graphql")) {
+          updateRelayImports(path);
         }
 
         return;
@@ -169,6 +235,56 @@ export function transformDeclarations({
         state.config.filePath,
         reporter
       );
+    },
+
+    DeclareVariable(path) {
+      const tsDeclareVariable = t.variableDeclaration("let", [
+        t.variableDeclarator(path.node.id),
+      ]);
+      tsDeclareVariable.declare = true;
+
+      replaceWith(path, tsDeclareVariable, state.config.filePath, reporter);
+    },
+
+    DeclareFunction(path) {
+      const { typeAnnotation } = path.node.id;
+      if (
+        typeAnnotation?.type === "TypeAnnotation" &&
+        typeAnnotation.typeAnnotation.type === "FunctionTypeAnnotation"
+      ) {
+        const functionTypeAnnotation = typeAnnotation.typeAnnotation;
+
+        const tsTypeParameters = functionTypeAnnotation.typeParameters
+          ? migrateTypeParameterDeclaration(
+              reporter,
+              state,
+              functionTypeAnnotation.typeParameters
+            )
+          : null;
+        const tsParameters = migrateFunctionParameters(
+          reporter,
+          state,
+          functionTypeAnnotation
+        );
+        const tsReturnType = migrateType(
+          reporter,
+          state,
+          functionTypeAnnotation.returnType
+        );
+
+        const tsDeclareFunction = t.tsDeclareFunction(
+          t.identifier(path.node.id.name),
+          tsTypeParameters,
+          tsParameters,
+          t.tsTypeAnnotation(tsReturnType)
+        );
+
+        replaceWith(path, tsDeclareFunction, state.config.filePath, reporter);
+      }
+    },
+
+    DeclareClass(path) {
+      path.remove();
     },
 
     InterfaceDeclaration(path) {
@@ -311,7 +427,7 @@ export function transformDeclarations({
           if (state.config.disableFlow) {
             // If flow is disabled, then we don't know, so mark it as unknown.
             (path.node.id as t.Identifier).typeAnnotation = t.tsTypeAnnotation(
-              t.tsUnknownKeyword()
+              t.tsArrayType(t.tsUnknownKeyword())
             );
             reporter.disableFlowCheck(state.config.filePath, path.node.id.loc!);
           } else {
@@ -352,7 +468,14 @@ export function transformDeclarations({
         path.parent.kind === "const";
       const isObjectDeclaration =
         path.node.init?.type === "ObjectExpression" &&
-        path.node.init.properties.length > 0;
+        path.node.init.properties.length > 0 &&
+        !(
+          path.node.init.properties.length === 1 &&
+          t.isSpreadElement(path.node.init.properties[0])
+        );
+      const isInsideBlock = t.isBlockStatement(
+        path.parentPath.parentPath?.node
+      );
       const isArrayDeclaration =
         path.node.init?.type === "ArrayExpression" &&
         path.node.init.elements.length > 0 &&
@@ -364,7 +487,8 @@ export function transformDeclarations({
         path.node.id.typeAnnotation !== null;
       if (
         isConstDeclaration &&
-        (isObjectDeclaration || (isExported && isArrayDeclaration)) &&
+        ((isObjectDeclaration && !isInsideBlock) ||
+          (isExported && isArrayDeclaration)) &&
         !hasTypeAnnotation
       ) {
         const asExpression = t.tsAsExpression(
@@ -373,44 +497,6 @@ export function transformDeclarations({
         );
         inheritLocAndComments(path.node.init as t.Expression, asExpression);
         path.node.init = asExpression;
-      }
-
-      // Look for calls to React.useState and make sure they have a type.
-      // Flow may allow this and type the resulting state variable as `empty`
-      // which behaves like `any`. TypeScript will throw an error without the type.
-      if (
-        path.node.init?.type === "CallExpression" &&
-        path.node.init.callee.type === "MemberExpression" &&
-        !path.node.init.typeArguments &&
-        !path.node.init.typeParameters
-      ) {
-        const call = path.node.init;
-        const member = path.node.init.callee;
-        const isReact =
-          t.isIdentifier(member.object) && member.object.name === "React";
-        const isUseState =
-          t.isIdentifier(member.property) &&
-          member.property.name === "useState";
-        const noInitialValue = call.arguments.length === 0;
-        const nullInitialValue =
-          call.arguments.length === 1 && t.isNullLiteral(call.arguments[0]);
-        const undefinedInitialValue =
-          call.arguments.length === 1 &&
-          t.isIdentifier(call.arguments[0]) &&
-          call.arguments[0].name === "undefined";
-        if (
-          isReact &&
-          isUseState &&
-          (noInitialValue || nullInitialValue || undefinedInitialValue)
-        ) {
-          reporter.untypedStateInitialization(
-            state.config.filePath,
-            getLoc(path.node)
-          );
-          path.node.init.typeParameters = t.tsTypeParameterInstantiation([
-            t.tsAnyKeyword(),
-          ]);
-        }
       }
     },
     FunctionExpression: functionVisitor({ awaitPromises, reporter, state }),
@@ -453,27 +539,6 @@ export function transformDeclarations({
     ClassDeclaration(path) {
       const { node } = path;
       if (node.superClass && node.superTypeParameters) {
-        // If it extends React.Component, we may need to modify the type to make sure it's still valid
-        // in TS. Some parameters like null make it an invalid component.
-        const isReactComponent =
-          node.superClass.type === "MemberExpression" &&
-          t.isIdentifier(node.superClass.object) &&
-          t.isIdentifier(node.superClass.property) &&
-          node.superClass.object.name === "React" &&
-          node.superClass.property.name === "Component";
-
-        const nullSecondParam =
-          node.superTypeParameters.params.length === 2 &&
-          node.superTypeParameters.params[1].type ===
-            "NullLiteralTypeAnnotation";
-
-        // React.Component<Props, null> -> React.Component<Props> (null makes it invalid JSX)
-        if (isReactComponent && nullSecondParam) {
-          node.superTypeParameters.params =
-            node.superTypeParameters.params.slice(0, 1);
-        }
-
-        // Process the type parameters
         node.superTypeParameters = migrateTypeParameterInstantiation(
           reporter,
           state,

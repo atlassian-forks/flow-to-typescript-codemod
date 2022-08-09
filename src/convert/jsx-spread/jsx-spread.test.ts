@@ -15,18 +15,17 @@ describe("transform spread JSX attributes", () => {
     const src = `
     type Props = { it: string, foo: number };
 
-    function Foobar(x: Props) { 
+    function Foobar(x: Props) {
       const { it, ...rest } = x;
       return <Mine it={it} {...rest} />
     }`;
     const expected = `
-    import {Flow} from 'flow-to-typescript-codemod';
     type Props = {
       it: string,
       foo: number
     };
 
-    function Foobar(x: Props & Omit<Omit<Flow.ComponentProps<typeof Mine>, 'it'>, keyof Props>) { 
+    function Foobar(x: Props & Omit<Omit<Flow.ComponentProps<typeof Mine>, 'it'>, keyof Props>) {
       const { it, ...rest } = x;
       return <Mine it={it} {...rest} />
     }`;
@@ -44,18 +43,17 @@ describe("transform spread JSX attributes", () => {
     const src = `
     type Props = { it: string, foo: number };
 
-    const Foobar = (x: Props) => { 
+    const Foobar = (x: Props) => {
       const { it, ...rest } = x;
       return <Mine it={it} {...rest} />
     }`;
     const expected = `
-    import {Flow} from 'flow-to-typescript-codemod';
     type Props = {
       it: string,
       foo: number
     };
 
-    const Foobar = (x: Props & Omit<Omit<Flow.ComponentProps<typeof Mine>, 'it'>, keyof Props>) => { 
+    const Foobar = (x: Props & Omit<Omit<Flow.ComponentProps<typeof Mine>, 'it'>, keyof Props>) => {
       const { it, ...rest } = x;
       return <Mine it={it} {...rest} />
     }`;
@@ -73,7 +71,7 @@ describe("transform spread JSX attributes", () => {
     const src = `
     type Props = { it: string, foo: number };
 
-    function Foobar(x: Props) { 
+    function Foobar(x: Props) {
       const { it, ...rest } = x;
       if (true) {
         return <Mine it={it} {...rest} />
@@ -82,13 +80,12 @@ describe("transform spread JSX attributes", () => {
       return <Mine {...rest} />
     }`;
     const expected = `
-    import {Flow} from 'flow-to-typescript-codemod';
     type Props = {
       it: string,
       foo: number
     };
 
-    function Foobar(x: Props & Omit<Omit<Flow.ComponentProps<typeof Mine>, 'it'>, keyof Props>) { 
+    function Foobar(x: Props & Omit<Omit<Flow.ComponentProps<typeof Mine>, 'it'>, keyof Props>) {
       const { it, ...rest } = x;
       if (true) {
         return <Mine it={it} {...rest} />
@@ -119,7 +116,6 @@ describe("transform spread JSX attributes", () => {
     }`;
 
     const expected = `
-    import {Flow} from 'flow-to-typescript-codemod';
     type Props = {
       it: string,
       foo: number
@@ -155,7 +151,6 @@ describe("transform spread JSX attributes", () => {
     }`;
 
     const expected = `
-    import {Flow} from 'flow-to-typescript-codemod';
     type Props = {
       it: string,
       foo: number
@@ -226,7 +221,6 @@ describe("transform spread JSX attributes", () => {
     }`;
 
     const expected = `
-    import {Flow} from 'flow-to-typescript-codemod';
     type State = {
       thing: boolean
     };
@@ -256,18 +250,17 @@ describe("transform spread JSX attributes", () => {
     const src = `
     type Props = { it: string, foo: number };
 
-    function Foobar(x: Props) { 
+    function Foobar(x: Props) {
       const { it, ...rest } = x;
       return <Mine {...rest} />
     }`;
     const expected = `
-    import {Flow} from 'flow-to-typescript-codemod';
     type Props = {
       it: string,
       foo: number
     };
 
-    function Foobar(x: Props & Omit<Flow.ComponentProps<typeof Mine>, keyof Props>) { 
+    function Foobar(x: Props & Omit<Flow.ComponentProps<typeof Mine>, keyof Props>) {
       const { it, ...rest } = x;
       return <Mine {...rest} />
     }`;
@@ -285,7 +278,7 @@ describe("transform spread JSX attributes", () => {
     const src = `
     type Props = { it: string, foo: number };
 
-    function Foobar(x: Props) { 
+    function Foobar(x: Props) {
       const { it, ...rest } = x;
       const El = Mine;
       return <El it={it} {...rest} />
@@ -296,7 +289,7 @@ describe("transform spread JSX attributes", () => {
       foo: number
     };
 
-    function Foobar(x: Props) { 
+    function Foobar(x: Props) {
       const { it, ...rest } = x;
       const El = Mine;
       return <El it={it} {...rest} />

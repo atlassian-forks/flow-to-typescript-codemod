@@ -249,4 +249,12 @@ describe("implied params", () => {
       await transform(src, stateBuilder({ config: { disableFlow: true } }))
     ).toBe(expected);
   });
+
+  it("should not add type parameters for new promise", async () => {
+    const src = "new Promise((resolve, reject) => {})";
+
+    expect(
+      await transform(src, stateBuilder({ config: { disableFlow: true } }))
+    ).toBe(src);
+  });
 });

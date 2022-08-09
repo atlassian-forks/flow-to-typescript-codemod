@@ -18,5 +18,3 @@ export const foo = () => {
   /* @ts-expect-error not actually error */
   return "bar";
 };
-
-const error1: string = 0;

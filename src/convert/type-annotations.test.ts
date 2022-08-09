@@ -26,42 +26,6 @@ describe("transform type annotations", () => {
     expect(await transform(src)).toBe(expected);
   });
 
-  it("Avoids marking void parameters if followed by non-optional", async () => {
-    const src = `function f(x: void, y: string){};`;
-    const expected = `function f(x: undefined, y: string){};`;
-    expect(await transform(src)).toBe(expected);
-  });
-
-  it("Marks void as optional if no other parameters", async () => {
-    const src = `function f(x: string | void, y?: string){};`;
-    const expected = `function f(x?: string, y?: string){};`;
-    expect(await transform(src)).toBe(expected);
-  });
-
-  it("Marks multiple void parameters optional with unions", async () => {
-    const src = `function f(x: T | void, y: ?string){};`;
-    const expected = `function f(x?: T, y?: string | null){};`;
-    expect(await transform(src)).toBe(expected);
-  });
-
-  it("Avoids optionals preceding nullables", async () => {
-    const src = `function f(x: ?T, y: string){};`;
-    const expected = `function f(x: T | null | undefined, y: string){};`;
-    expect(await transform(src)).toBe(expected);
-  });
-
-  it("Avoids optionals preceding non-optional unions", async () => {
-    const src = `function f(x: T | void, y: string){};`;
-    const expected = `function f(x: T | undefined, y: string){};`;
-    expect(await transform(src)).toBe(expected);
-  });
-
-  it("Convertsions optional unions preceding optionals", async () => {
-    const src = `function f(x: T | void, y?: string){};`;
-    const expected = `function f(x?: T, y?: string){};`;
-    expect(await transform(src)).toBe(expected);
-  });
-
   it("Converts void types to undefined", async () => {
     const src = dedent`
     const a: string = "";
@@ -96,9 +60,15 @@ describe("transform type annotations", () => {
   it("does not convert void return types for class methods to undefined", async () => {
     const src = dedent`
     class C {
-      fn(): void {} 
+      fn(): void {}
     }`;
     expect(await transform(src)).toBe(src);
+  });
+
+  it("strips void unamed argument", async () => {
+    const src = `const fn: (void) => void = () => {};`;
+    const expected = `const fn: () => void = () => {};`;
+    expect(await transform(src)).toBe(expected);
   });
 
   describe("converts literal types", () => {
@@ -220,44 +190,65 @@ describe("transform type annotations", () => {
   describe("synthetic events", () => {
     it("Converts SyntheticMouseEvent", async () => {
       const src = `const handler = (e: SyntheticMouseEvent) => {console.log(e)};`;
-      const expected = `const handler = (e: React.MouseEvent) => {console.log(e)};`;
+      const expected = dedent`
+        import type {MouseEvent} from 'react';
+        const handler = (e: MouseEvent) => {console.log(e)};
+      `;
       expect(await transform(src)).toBe(expected);
     });
 
     it("Converts SyntheticMouseEvent with params", async () => {
       const src = `const handler = (e: SyntheticMouseEvent<HTMLButtonElement>) => {console.log(e)};`;
-      const expected = `const handler = (e: React.MouseEvent<HTMLButtonElement>) => {console.log(e)};`;
+      const expected = dedent`
+        import type {MouseEvent} from 'react';
+        const handler = (e: MouseEvent<HTMLButtonElement>) => {console.log(e)};
+      `;
       expect(await transform(src)).toBe(expected);
     });
 
     it("Converts SyntheticInputEvent and adds input type", async () => {
       const src = `const handler = (e: SyntheticInputEvent) => {console.log(e)};`;
-      const expected = `const handler = (e: React.ChangeEvent<HTMLInputElement>) => {console.log(e)};`;
+      const expected = dedent`
+        import type {ChangeEvent} from 'react';
+        const handler = (e: ChangeEvent<HTMLInputElement>) => {console.log(e)};
+      `;
       expect(await transform(src)).toBe(expected);
     });
 
     it("Converts SyntheticInputEvent with open params", async () => {
       const src = `const handler = (e: SyntheticInputEvent<>) => {console.log(e)};`;
-      const expected = `const handler = (e: React.ChangeEvent<HTMLInputElement>) => {console.log(e)};`;
+      const expected = dedent`
+        import type {ChangeEvent} from 'react';
+        const handler = (e: ChangeEvent<HTMLInputElement>) => {console.log(e)};
+      `;
       expect(await transform(src)).toBe(expected);
     });
 
     it("Converts SyntheticInputEvent and keeps params", async () => {
       const src = `const handler = (e: SyntheticInputEvent<HTMLButtonElement>) => {console.log(e)};`;
-      const expected = `const handler = (e: React.ChangeEvent<HTMLButtonElement>) => {console.log(e)};`;
+      const expected = dedent`
+        import type {ChangeEvent} from 'react';
+        const handler = (e: ChangeEvent<HTMLButtonElement>) => {console.log(e)};
+      `;
       expect(await transform(src)).toBe(expected);
     });
 
     it("Converts SyntheticEvent to Event", async () => {
       const src = `const handler = (e: SyntheticEvent<>) => {console.log(e)};`;
-      const expected = `const handler = (e: React.SyntheticEvent) => {console.log(e)};`;
+      const expected = dedent`
+        import type {SyntheticEvent} from 'react';
+        const handler = (e: SyntheticEvent) => {console.log(e)};
+      `;
       expect(await transform(src)).toBe(expected);
     });
   });
 
   it("Converts SyntheticEvent to Event with params", async () => {
     const src = `const handler = (e: SyntheticEvent<HTMLElement>) => {console.log(e)};`;
-    const expected = `const handler = (e: React.SyntheticEvent<HTMLElement>) => {console.log(e)};`;
+    const expected = dedent`
+      import type {SyntheticEvent} from 'react';
+      const handler = (e: SyntheticEvent<HTMLElement>) => {console.log(e)};
+    `;
     expect(await transform(src)).toBe(expected);
   });
 
@@ -329,6 +320,16 @@ describe("transform type annotations", () => {
     expect(await transform(src)).toBe(expected);
   });
 
+  it("should convert strictly typed JestMockFn", async () => {
+    const src = dedent`
+      const reduceChildIssueMock = (reduceChildIssue: JestMockFn<[BaseUrl, FetchChildIssue], {...}>);
+    `;
+    const expected = dedent`
+      const reduceChildIssueMock = (reduceChildIssue as jest.MockedFunction<(...args: [BaseUrl, FetchChildIssue]) => Record<any, any>>);
+    `;
+    expect(await transform(src)).toBe(expected);
+  });
+
   // Moment
 
   it("Converts MomentDuration", async () => {
@@ -367,51 +368,27 @@ describe("transform type annotations", () => {
 
   // React
 
-  it("Converts React.Node to React.ReactElement in function return", async () => {
-    const src = `const Component = (props: Props): React.Node => {return <div />};`;
-    const expected = `const Component = (props: Props): React.ReactElement => {return <div />};`;
+  it.skip("Converts React.Node to React.ReactElement in function return", async () => {
+    const src = `const Component = (props: Props): Node => {return <div />};`;
+    const expected = dedent`
+      import {ReactElement} from 'react';
+      const Component = (props: Props): ReactElement => {return <div />};
+    `;
     expect(await transform(src)).toBe(expected);
   });
 
   it("Converts React.Element", async () => {
-    const src = `function f(): React.Element<T> {};`;
-    const expected = `function f(): React.ReactElement<React.ComponentProps<T>> {};`;
-    expect(await transform(src)).toBe(expected);
-  });
-
-  it("Converts React.Text", async () => {
-    const src = `function f(): React.Text {};`;
-    const expected = `function f(): React.ReactText {};`;
-    expect(await transform(src)).toBe(expected);
-  });
-
-  it("Converts React.Child", async () => {
-    const src = `function f(): React.Child {};`;
-    const expected = `function f(): React.ReactChild {};`;
-    expect(await transform(src)).toBe(expected);
-  });
-
-  it("Converts React.Children", async () => {
-    const src = `function f(): React.Children {};`;
-    const expected = `function f(): React.ReactChildren {};`;
-    expect(await transform(src)).toBe(expected);
-  });
-
-  it("Converts React.Fragment", async () => {
-    const src = `function f(): React.Fragment {};`;
-    const expected = `function f(): React.ReactFragment {};`;
-    expect(await transform(src)).toBe(expected);
-  });
-
-  it("Converts React.Portal", async () => {
-    const src = `function f(): React.Portal {};`;
-    const expected = `function f(): React.ReactPortal {};`;
+    const src = `function f(): Element<T> {};`;
+    const expected = dedent`
+      import type {ReactElement, ComponentProps} from 'react';
+      function f(): ReactElement<ComponentProps<T>> {}
+    `;
     expect(await transform(src)).toBe(expected);
   });
 
   it("Converts React.Config", async () => {
     const src = dedent`const Test = (
-      props: React.Config<Props, DefaultProps>,
+      props: Config<Props, DefaultProps>,
     ) => {
       return <Test {...props} globals={globals} />;
     };`;
@@ -424,68 +401,68 @@ describe("transform type annotations", () => {
   });
 
   it("Converts React.ElementProps", async () => {
-    const src = `function f(): React.ElementProps {};`;
-    const expected = `function f(): React.ComponentProps {};`;
+    const src = `function f(): ElementProps {};`;
+    const expected = dedent`
+      import type {ComponentProps} from 'react';
+      function f(): ComponentProps {}
+    `;
     expect(await transform(src)).toBe(expected);
   });
 
   it("Converts React.StatelessFunctionalComponent", async () => {
-    const src = `function f(): React.StatelessFunctionalComponent<Props> {};`;
-    const expected = `function f(): React.FC<Props> {};`;
+    const src = `function f(): StatelessFunctionalComponent<Props> {};`;
+    const expected = dedent`
+      import type {FC} from 'react';
+      function f(): FC<Props> {}
+    `;
     expect(await transform(src)).toBe(expected);
   });
 
-  it("Converts React.NodeArray", async () => {
-    const src = `function f(): React.NodeArray {};`;
-    const expected = `function f(): React.ReactNodeArray {};`;
+  it.skip("Converts React.Node to React.ReactElement in arrow function", async () => {
+    const src = `const Component = (props: Props): Node => {return <div />};`;
+    const expected = dedent`
+      import type {ReactElement} from 'react';
+      const Component = (props: Props): ReactElement => {return <div />};
+    `;
     expect(await transform(src)).toBe(expected);
   });
 
-  it("Converts React.MixedElement", async () => {
-    const src = `function f(): React.MixedElement {};`;
-    const expected = `function f(): React.ReactElement {};`;
-    expect(await transform(src)).toBe(expected);
-  });
-
-  it("Converts React.Portal with type parameters", async () => {
-    const src = `function f(): React.Portal<Props> {};`;
-    const expected = `function f(): React.ReactPortal<Props> {};`;
-    expect(await transform(src)).toBe(expected);
-  });
-
-  it("Converts React.Node to React.ReactElement in arrow function", async () => {
-    const src = `const Component = (props: Props): React.Node => {return <div />};`;
-    const expected = `const Component = (props: Props): React.ReactElement => {return <div />};`;
-    expect(await transform(src)).toBe(expected);
-  });
-
-  it("Converts React.Node to React.ReactElement or null in arrow function return", async () => {
-    const src = dedent`const Component = (props: Props): React.Node => {
+  it.skip("Converts React.Node to React.ReactElement or null in arrow function return", async () => {
+    const src = dedent`const Component = (props: Props): Node => {
       if (foo) return (<div />);
       return null;
     };`;
-    const expected = dedent`const Component = (props: Props): React.ReactElement | null => {
-      if (foo) return (<div />);
-      return null;
-    };`;
+    const expected = dedent`
+      import type {ReactElement} from 'react';
+      const Component = (props: Props): ReactElement | null => {
+        if (foo) return (<div />);
+        return null;
+      };
+    `;
     expect(await transform(src)).toBe(expected);
   });
 
-  it("Converts React.Node to React.ReactElement in normal function", async () => {
-    const src = `function Component(props: Props): React.Node {return <div />};`;
-    const expected = `function Component(props: Props): React.ReactElement {return <div />};`;
+  it.skip("Converts React.Node to React.ReactElement in normal function", async () => {
+    const src = `function Component(props: Props): Node {return <div />};`;
+    const expected = dedent`
+      import type {ReactElement} from 'react';
+      function Component(props: Props): ReactElement {return <div />}
+    `;
     expect(await transform(src)).toBe(expected);
   });
 
-  it("Converts React.Node to React.ReactElement or null in normal function return", async () => {
-    const src = dedent`function Component(props: Props): React.Node {
+  it.skip("Converts React.Node to React.ReactElement or null in normal function return", async () => {
+    const src = dedent`function Component(props: Props): Node {
       if (foo) return (<div />);
       return null;
     };`;
-    const expected = dedent`function Component(props: Props): React.ReactElement | null {
-      if (foo) return (<div />);
-      return null;
-    };`;
+    const expected = dedent`
+      import type {ReactElement} from 'react';
+      function Component(props: Props): ReactElement | null {
+        if (foo) return (<div />);
+        return null;
+      }
+    `;
     expect(await transform(src)).toBe(expected);
   });
 
@@ -495,40 +472,37 @@ describe("transform type annotations", () => {
     expect(await transform(src)).toBe(expected);
   });
 
-  it("Converts React$Element", async () => {
-    const src = `function f(): React$Element<T> {};`;
-    const expected = `function f(): React.ReactElement<React.ComponentProps<T>> {};`;
-    expect(await transform(src)).toBe(expected);
-  });
-
-  it("Converts React$Element in a declaration", async () => {
-    const src = `export type SvgType = React$Element<'svg'>;`;
-    const expected = `export type SvgType = React.ReactElement<React.ComponentProps<'svg'>>;`;
-    expect(await transform(src)).toBe(expected);
-  });
-
   it("Converts React.ElementConfig to JSX.LibraryManagedAttributes", async () => {
-    const src = `type Test = React.ElementConfig<C>;`;
-    const expected = `type Test = JSX.LibraryManagedAttributes<C, React.ComponentProps<C>>;`;
+    const src = `type Test = ElementConfig<C>;`;
+    const expected = dedent`
+      import type {ComponentProps} from 'react';
+      type Test = JSX.LibraryManagedAttributes<C, ComponentProps<C>>;
+    `;
     expect(await transform(src)).toBe(expected);
   });
 
   it("Converts React.ElementConfig and keeps typeof", async () => {
-    const src = `type Test = React.ElementConfig<typeof C>;`;
-    const expected = `type Test = JSX.LibraryManagedAttributes<typeof C, React.ComponentProps<typeof C>>;`;
+    const src = `type Test = ElementConfig<typeof C>;`;
+    const expected = dedent`
+      import type {ComponentProps} from 'react';
+      type Test = JSX.LibraryManagedAttributes<typeof C, ComponentProps<typeof C>>;
+    `;
     expect(await transform(src)).toBe(expected);
   });
 
   it("Converts React.ElementConfig with indexing", async () => {
-    const src = `type Test = $PropertyType<React.ElementConfig<C>, 'foo'>;`;
-    const expected = `type Test = JSX.LibraryManagedAttributes<C, React.ComponentProps<C>>['foo'];`;
+    const src = `type Test = $PropertyType<ElementConfig<C>, 'foo'>;`;
+    const expected = dedent`
+      import type {ComponentProps} from 'react';
+      type Test = JSX.LibraryManagedAttributes<C, ComponentProps<C>>['foo'];
+    `;
     expect(await transform(src)).toBe(expected);
   });
 
   it("Converts React.ChildrenArray to an array", async () => {
     const src = dedent`
     type Props = {
-      children: React.ChildrenArray<MenuChildren>;
+      children: ChildrenArray<MenuChildren>;
     };`;
     const expected = dedent`
     type Props = {
@@ -539,17 +513,15 @@ describe("transform type annotations", () => {
 
   // Utility Types
   it("Converts React.AbstractComponent to Flow.AbstractComponent", async () => {
-    const src = `export type Component = React.AbstractComponent<Config, Instance>;`;
+    const src = `export type Component = AbstractComponent<Config, Instance>;`;
     const expected = dedent`
-    import {Flow} from 'flow-to-typescript-codemod';
     export type Component = Flow.AbstractComponent<Config, Instance>;`;
     expect(await transform(src)).toBe(expected);
   });
 
   it("Converts React.AbstractComponent and matches parameters", async () => {
-    const src = `export type Component = React.AbstractComponent<Config>;`;
+    const src = `export type Component = AbstractComponent<Config>;`;
     const expected = dedent`
-    import {Flow} from 'flow-to-typescript-codemod';
     export type Component = Flow.AbstractComponent<Config>;`;
     expect(await transform(src)).toBe(expected);
   });
@@ -671,7 +643,6 @@ class C {
   it("Converts Class to Flow.Class", async () => {
     const src = `(storeClass: Class<Store>) => {};`;
     const expected = dedent`
-    import {Flow} from 'flow-to-typescript-codemod';
     (storeClass: Flow.Class<Store>) => {};`;
     expect(await transform(src)).toBe(expected);
   });
@@ -686,7 +657,6 @@ class C {
   it("Converts $Diff to Flow.Diff", async () => {
     const src = `type Test = $Diff<A, B>;`;
     const expected = dedent`
-    import {Flow} from 'flow-to-typescript-codemod';
     type Test = Flow.Diff<A, B>;`;
     expect(await transform(src)).toBe(expected);
   });
@@ -699,7 +669,6 @@ class C {
   it("Converts $Rest to Partial<Flow.Diff>", async () => {
     const src = `type Test = $Rest<A, B>;`;
     const expected = dedent`
-    import {Flow} from 'flow-to-typescript-codemod';
     type Test = Partial<Flow.Diff<A, B>>;`;
     expect(await transform(src)).toBe(expected);
   });
@@ -846,7 +815,6 @@ class C {
     it("Converts $ObjMap to Flow.ObjMap", async () => {
       const src = `type Test = $ObjMap<A, B>;`;
       const expected = dedent`
-      import {Flow} from 'flow-to-typescript-codemod';
       type Test = Flow.ObjMap<A, B>;`;
       expect(await transform(src)).toBe(expected);
     });
@@ -856,11 +824,33 @@ class C {
       expect(await transform(src)).toBe(src);
     });
   });
+
+  describe("$TupleMap", () => {
+    it("should convert $TupleMap to Flow.TupleMap", async () => {
+      const src = `type Test = $TupleMap<A, B>;`;
+      const expected = dedent`
+      type Test = Flow.TupleMap<A, B>;`;
+      expect(await transform(src)).toBe(expected);
+    });
+  });
+
   it("Handles unexpected type nodes", async () => {
     const src = dedent`
     function f(a: function){};`;
     const expected = `function f(a: unknown){};`;
     expect(await transform(src)).toBe(expected);
     expectMigrationReporterMethodCalled("unhandledFlowInputNode");
+  });
+  it("Handles curried function types with generics", async () => {
+    const src = dedent`
+    const assign = <A, B>(a: A): ((B) => { ...A, ...B }) => (b: B): { ...A, ...B } => ({ ...a, ...b });`;
+    const expected = `const assign = <A, B>(a: A): ((arg1: B) => ((A) & (B))) => (b: B): ((A) & (B)) => ({ ...a, ...b });`;
+    expect(await transform(src)).toBe(expected);
+  });
+
+  it("should convert jest done callback", async () => {
+    const src = "type T = JestDoneFn;";
+    const expected = "type T = jest.DoneCallback;";
+    expect(await transform(src)).toBe(expected);
   });
 });

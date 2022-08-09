@@ -1,5 +1,6 @@
 import * as t from "@babel/types";
 import traverse, { NodePath } from "@babel/traverse";
+import generate from "@babel/generator";
 import {
   replaceWith,
   isInsideCreateReactClass,
@@ -11,6 +12,7 @@ import { migrateTypeParameterInstantiation } from "./migrate/type-parameter";
 import { TransformerInput } from "./transformer";
 import MigrationReporter from "../runner/migration-reporter";
 import { State } from "../runner/state";
+import { getType } from "./styled-components";
 
 /**
  * Transform expression nodes and type assertions
@@ -150,22 +152,42 @@ export function transformExpressions({
         // reporter.unsupportedTypeCast(state, path.node.expression.loc!);
         // ```
 
-        replaceWith(
-          path,
-          t.tsAsExpression(
-            path.node.expression,
-            migrateType(
-              reporter,
-              state,
-              path.node.typeAnnotation.typeAnnotation,
-              {
-                path,
-              }
-            )
-          ),
-          state.config.filePath,
-          reporter
+        const tsAsExp = t.tsAsExpression(
+          path.node.expression,
+          migrateType(
+            reporter,
+            state,
+            path.node.typeAnnotation.typeAnnotation,
+            {
+              path,
+            }
+          )
         );
+
+        // Handle prettier breaking TS cast expressions
+        if (
+          path.parentPath?.parentPath?.node.type === "SwitchCase" ||
+          path.parentPath?.parentPath?.parentPath?.node.type === "SwitchCase"
+        ) {
+          // @ts-expect-error comments doesn't exist on babel type
+          path.parentPath.node.comments = (
+            path.parentPath.node.comments || []
+          ).concat({
+            type: "CommentLine",
+            value: " prettier-ignore",
+            leading: true,
+            trailing: false,
+            loc: null,
+          });
+          replaceWith(
+            path,
+            t.parenthesizedExpression(tsAsExp),
+            state.config.filePath,
+            reporter
+          );
+        } else {
+          replaceWith(path, tsAsExp, state.config.filePath, reporter);
+        }
       }
     },
     ArrowFunctionExpression(path) {
@@ -241,6 +263,23 @@ export function transformExpressions({
           firstArgument.value = firstArgument.value.replace(/\.jsx?$/, "");
         }
       }
+
+      // createSelector<Foo, undefined>(...) → createSelector(...);
+      // createHook<Foo, undefined>(...) → createHook(...);
+      if (
+        t.isIdentifier(path.node.callee) &&
+        ["createSelector", "createHook", "connect"].includes(
+          path.node.callee.name
+        )
+      ) {
+        path.node.typeParameters = null;
+        if (
+          t.isVariableDeclarator(path.parentPath.node) &&
+          t.isIdentifier(path.parentPath.node.id)
+        ) {
+          path.parentPath.node.id.typeAnnotation = null;
+        }
+      }
     },
     NewExpression(path) {
       migrateArgumentsToParameters(path, reporter, state);
@@ -254,6 +293,154 @@ export function transformExpressions({
           state,
           node.superTypeParameters as t.TypeParameterInstantiation
         );
+      }
+    },
+
+    TaggedTemplateExpression(path) {
+      if (t.isIdentifier(path.node.tag, { name: "css" })) {
+        const hasComplexInterpolation = path.node.quasi.expressions.some(
+          (expression) => t.isArrowFunctionExpression(expression)
+        );
+        if (hasComplexInterpolation) {
+          path.node.tag.name += "<any>";
+        }
+      } else if (
+        t.isMemberExpression(path.node.tag) &&
+        t.isIdentifier(path.node.tag.object, { name: "styled" })
+      ) {
+        // If it already has a type annotation
+        if (
+          t.isVariableDeclarator(path.parentPath?.node) &&
+          t.isIdentifier(path.parentPath.node.id) &&
+          t.isTypeAnnotation(path.parentPath.node.id.typeAnnotation)
+        ) {
+          // Skip processing when the tag is complex, such as styled.#div.
+          if (!t.isIdentifier(path.node.tag.property)) {
+            return;
+          }
+
+          const { typeAnnotation } = path.parentPath.node.id.typeAnnotation;
+          // 'const A: ComponentType<B> = styled.div``' becomes 'const A = styled.div<B>``'.
+          if (
+            t.isGenericTypeAnnotation(typeAnnotation) &&
+            t.isIdentifier(typeAnnotation.id, { name: "ComponentType" }) &&
+            typeAnnotation.typeParameters?.params.length === 1
+          ) {
+            const tsTypeParameter = migrateType(
+              reporter,
+              state,
+              typeAnnotation.typeParameters.params[0]
+            );
+            path.parentPath.node.id.typeAnnotation = null;
+            path.node.tag.property.name += `<${
+              generate(tsTypeParameter).code
+            }>`;
+          } else {
+            // Assume `any` as a fallback if the type assigned to the variable can't have the props extracted
+            path.parentPath.node.id.typeAnnotation = null;
+            path.node.tag.property.name += `<any>`;
+          }
+        } else {
+          // Otherwise we need to infer the types
+          type PropType = {
+            isOptional: boolean;
+            type?: string;
+          };
+
+          const { expressions = [] } = path.node.quasi;
+          const props: Record<string, PropType> = {};
+
+          for (const expression of expressions) {
+            if (!t.isArrowFunctionExpression(expression)) {
+              continue;
+            }
+
+            const [param] = expression.params;
+            if (t.isObjectPattern(param)) {
+              for (const property of param.properties) {
+                if (
+                  t.isObjectProperty(property) &&
+                  t.isIdentifier(property.key) &&
+                  property.key.name !== "theme"
+                ) {
+                  if (!(property.key.name in props)) {
+                    const isOptional = t.isAssignmentPattern(property.value);
+                    const type = getType(property.key.name);
+                    props[property.key.name] = { type, isOptional };
+                  }
+
+                  const hasToBeNumber =
+                    t.isAssignmentPattern(property.value) &&
+                    t.isNumericLiteral(property.value.right);
+                  if (hasToBeNumber) {
+                    props[property.key.name] = {
+                      type: "number",
+                      isOptional: props[property.key.name]?.isOptional ?? false,
+                    };
+                  }
+                }
+              }
+            } else if (t.isIdentifier(param)) {
+              traverse(
+                expression,
+                {
+                  Identifier(idPath) {
+                    if (idPath.node.name === param.name) {
+                      if (
+                        t.isMemberExpression(idPath.parentPath.node) &&
+                        t.isIdentifier(idPath.parentPath.node.property) &&
+                        idPath.parentPath.node.property.name !== "theme"
+                      ) {
+                        const { property } = idPath.parentPath.node;
+                        if (!(idPath.parentPath.node.property.name in props)) {
+                          const isOptional = t.isConditionalExpression(
+                            idPath.parentPath.parent
+                          );
+                          const type = getType(property.name);
+                          props[property.name] = { type, isOptional };
+                        }
+
+                        // Allow overriding with a more specific type in specific situations like when using in an arithmetic operation
+                        const hasToBeNumber =
+                          t.isBinaryExpression(idPath.parentPath.parent) &&
+                          ["-", "*", "/", "+"].includes(
+                            idPath.parentPath.parent.operator
+                          );
+                        if (hasToBeNumber) {
+                          props[property.name] = {
+                            type: "number",
+                            isOptional:
+                              props[property.name]?.isOptional ?? false,
+                          };
+                        }
+                      }
+                    }
+                  },
+                },
+                path.scope,
+                state,
+                path
+              );
+            }
+          }
+
+          if (t.isIdentifier(path.node.tag.property)) {
+            const typeEntries = Object.entries(props);
+            const typeAsString =
+              typeEntries.length > 0
+                ? "{ " +
+                  typeEntries
+                    .map(
+                      ([key, { isOptional, type }]) =>
+                        `${key}${isOptional ? "?: " : ": "}${type}`
+                    )
+                    .join(", ") +
+                  " }"
+                : "any";
+
+            path.node.tag.property.name += `<${typeAsString}>`;
+          }
+        }
       }
     },
   });

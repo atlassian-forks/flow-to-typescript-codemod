@@ -3,12 +3,6 @@ import { transform, stateBuilder } from "./utils/testing";
 
 describe("transform type annotations", () => {
   // React
-  it("Converts React$Node to React.ReactNode", async () => {
-    const src = `type Foo = React$Node;`;
-    const expected = `type Foo = React.ReactNode;`;
-    expect(await transform(src)).toBe(expected);
-  });
-
   it("converts React$Context", async () => {
     const src = `const Context: React$Context<T> = React.createContext(T);`;
     const expected = `const Context: React.Context<T> = React.createContext(T);`;
@@ -52,21 +46,5 @@ describe("transform type annotations", () => {
     const test = React.useRef<React.ElementRef<'div'>>(null);
     `;
     expect(await transform(src)).toBe(expected);
-  });
-
-  describe("with props", () => {
-    it("replaces $FlowFixMe no matter what", async () => {
-      const state = stateBuilder({
-        config: {
-          keepPrivateTypes: false,
-        },
-      });
-      const src = dedent`
-      // @flow
-      class Dashhboard extends Component<$FlowFixMeProps> {}`;
-      const expected = dedent`
-      class Dashhboard extends Component<any> {}`;
-      expect(await transform(src, state)).toBe(expected);
-    });
   });
 });

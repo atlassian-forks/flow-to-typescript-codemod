@@ -8,15 +8,13 @@ import { runTransforms } from "./run-transforms";
 import MigrationReporter from "./migration-reporter";
 import { ConvertCommandCliArgs } from "../cli/arguments";
 import { defaultTransformerChain } from "../convert/default-transformer-chain";
-import {
-  annotateNoFlowTransformRunner,
-  watermarkTransformRunner,
-} from "../convert/transform-runners";
+import { watermarkTransformRunner } from "../convert/transform-runners";
 import { State } from "./state";
 import { ConfigurableTypeProvider } from "../convert/utils/configurable-type-provider";
 import { hasDeclaration } from "../convert/utils/common";
 import { FlowFileList, FlowFileType } from "./find-flow-files";
 import { logger } from "./logger";
+import { updateSnapshotFile } from "./update-snapshots";
 
 export const FlowCommentRegex = /((\/){2,} ?)*@flow.*\n+/;
 
@@ -24,6 +22,20 @@ export const recastOptions: Options = {
   quote: "single",
   trailingComma: true,
   objectCurlySpacing: false,
+};
+
+/**
+ * Matches test files to have a more relaxed configuration and update snapshots.
+ * Please add other checks if you think it should also match integration tests
+ * when assessing the type coverage parity later.
+ * @param filePath
+ */
+const isTest = (filePath: string) => {
+  return (
+    filePath.endsWith(".test.js") ||
+    filePath.endsWith("/test.js") ||
+    filePath.endsWith("/test-spec.js")
+  );
 };
 
 /**
@@ -37,11 +49,7 @@ export async function processBatchAsync(
   await Promise.all(
     filePaths.map(async ({ filePath, fileType }) => {
       try {
-        if (
-          (fileType === FlowFileType.NO_FLOW && options.skipNoFlow) ||
-          (fileType === FlowFileType.NO_ANNOTATION &&
-            !options.convertUnannotated)
-        ) {
+        if (fileType === FlowFileType.NO_FLOW && options.skipNoFlow) {
           return;
         }
         const fileBuffer = await fs.readFile(filePath);
@@ -59,7 +67,7 @@ export async function processBatchAsync(
         const file: t.File = recast.parse(fileText, {
           parser: recastFlowParser,
         });
-        const isTestFile = filePath.endsWith(".test.js");
+        const isTestFile = isTest(filePath);
         if (hasDeclaration(file)) {
           reporter.foundDeclarationFile(filePath);
           return;
@@ -67,6 +75,7 @@ export async function processBatchAsync(
         const state: State = {
           hasJsx: false,
           usedUtils: false,
+          reactImports: new Set(),
           config: {
             filePath,
             isTestFile,
@@ -87,13 +96,6 @@ export async function processBatchAsync(
 
         if (options.watermark) {
           transforms.push(watermarkTransformRunner);
-        }
-
-        if (
-          fileType === FlowFileType.NO_ANNOTATION &&
-          options.convertUnannotated
-        ) {
-          transforms.push(annotateNoFlowTransformRunner);
         }
 
         await runTransforms(reporter, state, file, transforms);
@@ -135,13 +137,10 @@ export async function processBatchAsync(
               `${tsFileName}.snap`
             );
             if (snapshotPath !== newSnapPath) {
-              reporter.migrateSnapFile(
-                filePath,
-                originalSnapPath,
-                snapshotPath
-              );
+              reporter.migrateSnapFile(filePath, originalSnapPath, newSnapPath);
               try {
                 await fs.move(snapshotPath, newSnapPath);
+                updateSnapshotFile(newSnapPath);
               } catch (e) {
                 reporter.error(filePath, e);
               }

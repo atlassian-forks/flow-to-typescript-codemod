@@ -34,8 +34,15 @@ function removeUnusedInFile(
             sourceFile.replaceText([insertPos - 2, insertPos + length + 2], "");
             addedLength -= length + 4;
           } else {
-            sourceFile.replaceText([insertPos, insertPos + length], "");
-            addedLength -= length;
+            const newLine =
+              sourceFile.getFullText().charCodeAt(insertPos + length) === 10
+                ? 1
+                : 0;
+            sourceFile.replaceText(
+              [insertPos, insertPos + length + newLine],
+              ""
+            );
+            addedLength -= length + newLine;
           }
           metrics.removed += 1;
         } catch (error) {
@@ -74,7 +81,7 @@ export async function removeUnusedErrors(
     }
 
     const errorStart = error.getStart();
-    if (errorStart === undefined) {
+    if (!errorStart) {
       return;
     }
 

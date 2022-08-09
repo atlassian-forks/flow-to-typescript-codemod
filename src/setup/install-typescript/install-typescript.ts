@@ -4,6 +4,9 @@ import { exec } from "child_process";
 import { existsSync } from "fs";
 import { logger } from "../../runner/logger";
 
+// This TS version should match with version of "typescript" in the root `package.json` file.
+const TS_VERSION = "^4.7.4";
+
 /**
  * Install a fixed version of typescript
  */
@@ -13,7 +16,7 @@ export function installTypescript() {
       throw new Error("Must run this in a directory with a package.json");
     }
 
-    exec("yarn add --dev typescript@4.6.4", (err, stdout) => {
+    exec(`yarn add --dev typescript@${TS_VERSION}`, (err, stdout) => {
       if (err) {
         logger.error("Real Err:", err);
         return reject(err);

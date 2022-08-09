@@ -62,9 +62,6 @@ export function hasDeclaration(file: t.File): boolean {
     DeclareExportDeclaration() {
       found = true;
     },
-    DeclareClass() {
-      found = true;
-    },
   });
 
   return found;
@@ -156,6 +153,21 @@ export function isInsideCreateReactClass(path: NodePath<t.Node>): boolean {
 
   if (path.parentPath) {
     return isInsideCreateReactClass(path.parentPath);
+  }
+
+  return false;
+}
+
+export function isInsideFunction(path: NodePath<t.Node>): boolean {
+  if (path.parentPath) {
+    return (
+      t.isFunctionDeclaration(path.parentPath) ||
+      t.isArrowFunctionExpression(path.parentPath) ||
+      t.isFunctionExpression(path.parentPath) ||
+      t.isObjectMethod(path.parentPath) ||
+      t.isClassMethod(path.parentPath) ||
+      t.isClassPrivateMethod(path.parentPath)
+    );
   }
 
   return false;

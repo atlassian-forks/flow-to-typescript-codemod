@@ -125,7 +125,7 @@ function processFlowTypeAtPosStdout(
 
   // The inferred Flow type is really big, a human probably would not have written it. Don’t
   // return the type.
-  if (type.length >= 100) {
+  if (type.length >= 80 || type.includes("$") || type.includes("_")) {
     migrationReporter.complexFlowType(state.config.filePath, location, type);
     return null;
   }

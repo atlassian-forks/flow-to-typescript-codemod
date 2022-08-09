@@ -51,6 +51,18 @@ export function removeFlowComments({ file }: TransformerInput) {
   traverse(file, {
     Program(path) {
       removeComments(path);
+
+      path.traverse({
+        enter(path) {
+          // Type is incorrect and needs to be casted to the correct recast type
+          const node = path.node as types.namedTypes.Node;
+          if (Array.isArray(node.comments)) {
+            node.comments = node.comments.filter(
+              (comment) => !flowComments.some((c) => comment.value.includes(c))
+            );
+          }
+        },
+      });
     },
     BlockStatement(path) {
       removeComments(path);

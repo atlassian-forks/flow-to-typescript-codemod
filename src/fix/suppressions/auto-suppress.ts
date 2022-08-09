@@ -84,6 +84,7 @@ export async function autoSuppressErrors(
     SourceFile,
     Record<number, CommentToMake>
   > = new Map();
+  const skippedErrors: string[] = [];
   logger.info("Suppressing errors..");
   const diagnostics = getDiagnostics(project);
 
@@ -107,6 +108,16 @@ export async function autoSuppressErrors(
 
     // Find out which comment we should make
     const errorLine = sourceFile.getDescendantAtPos(errorStartLine);
+
+    // Skip error suppression for type errors within template expressions
+    if (
+      errorLine?.compilerNode != null &&
+      ts.isTemplateLiteralToken(errorLine.compilerNode)
+    ) {
+      skippedErrors.push(sourceFile.getFilePath());
+      return;
+    }
+
     const commentsForFile = diagnosticsByFile.get(sourceFile) ?? {};
     const commentsForLine = commentsForFile[errorStartLine] ?? {
       position: errorStartLine,
@@ -142,7 +153,14 @@ export async function autoSuppressErrors(
     }
   }
 
+  const uniqueSkippedFiles = Array.from(new Set(skippedErrors));
+  uniqueSkippedFiles.forEach((skippedFile) => {
+    logger.warn(`Skipped suppressing error at ${skippedFile}`);
+  });
+
   logger.complete(
-    `Suppressed ${metrics.suppressed} errors across ${diagnosticsByFile.size} files.`
+    `Suppressed ${metrics.suppressed - skippedErrors.length} and skipped ${
+      skippedErrors.length
+    } errors across ${diagnosticsByFile.size} files.`
   );
 }

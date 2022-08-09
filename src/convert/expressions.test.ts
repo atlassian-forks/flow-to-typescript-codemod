@@ -49,6 +49,44 @@ describe("transform expressions", () => {
     expect(await transform(src)).toBe(expected);
   });
 
+  it("typecasts expression in switch disabling prettier", async () => {
+    const src = dedent`
+    switch (foo) {
+      default:
+        (foo: empty);
+    }
+    `;
+    const expected = dedent`
+    switch (foo) {
+      default:
+        // prettier-ignore
+        (foo as never);
+    }
+    `;
+    expect(await transform(src)).toBe(expected);
+  });
+
+  it("typecasts expression in switch disabling prettier and preserving comment", async () => {
+    const src = dedent`
+    switch (foo) {
+      default: {
+        // Some comment
+        (foo: empty);
+      }
+    }
+    `;
+    const expected = dedent`
+    switch (foo) {
+      default: {
+        // Some comment
+        // prettier-ignore
+        (foo as never);
+      }
+    }
+    `;
+    expect(await transform(src)).toBe(expected);
+  });
+
   // Arrow Function Type Parameters
   it("does not modify non-tsx arrow function parameters", async () => {
     const src = `const f = <T>(arg: T) => {arg};`;
@@ -212,6 +250,222 @@ describe("transform expressions", () => {
       const expected = dedent`
       const a = [1, 2, 3].reduce<Record<string, any>>((acc: any, val) => ({...acc, [val]: val}), {});`;
       expect(await transform(src)).toBe(expected);
+    });
+  });
+
+  describe("typed createSelector", () => {
+    it("should strip type parameters", async () => {
+      const src = dedent`
+      // @flow
+      const selector = createSelector<any, any, any>();
+      const hook = createHook<State, Actions>();
+      export default connect<State, any, any, any>();
+      `;
+      const expected = dedent`
+      const selector = createSelector();
+      const hook = createHook();
+      export default connect();
+      `;
+      expect(await transform(src)).toBe(expected);
+    });
+
+    it("should strip type cast", async () => {
+      const src = dedent`
+      // @flow
+      const selector: SelectorType = createSelector();
+      const hook: HookFunction<State, Actions> = createHook();
+      `;
+      const expected = dedent`
+      const selector = createSelector();
+      const hook = createHook();
+      `;
+      expect(await transform(src)).toBe(expected);
+    });
+  });
+
+  describe("styled-components", () => {
+    const withFlowDisabled = stateBuilder({ config: { disableFlow: true } });
+
+    it("Adds styled components generic argument inferring boolean props of deconstruct arg", async () => {
+      const fn = "${({ isFoo }) => isFoo ? 0 : 2}";
+      const src = dedent`
+        export const Container = styled.div\`
+          padding: ${fn}px 0;
+        \`;
+      `;
+      const expected = dedent`
+        export const Container = styled.div<{ isFoo: boolean }>\`
+          padding: ${fn}px 0;
+        \`;
+      `;
+      expect(await transform(src, withFlowDisabled)).toBe(expected);
+    });
+
+    it("Adds styled components generic argument inferring boolean props of single arg", async () => {
+      const fn = "${(props) => props.isFoo ? 0 : 2}";
+      const src = dedent`
+        export const Container = styled.div\`
+          padding: ${fn}px 0;
+        \`;
+      `;
+      const expected = dedent`
+        export const Container = styled.div<{ isFoo?: boolean }>\`
+          padding: ${fn}px 0;
+        \`;
+      `;
+      expect(await transform(src, withFlowDisabled)).toBe(expected);
+    });
+
+    it("Adds styled components generic argument inferring other props", async () => {
+      const fn = "${(p) => p.height}";
+      const fn2 = "${(p) => p.width}";
+      const src = dedent`
+        export const Container = styled.span\`
+          heigh: ${fn}px;
+          width: ${fn2}px;
+        \`;
+      `;
+      const expected = dedent`
+        export const Container = styled.span<{ height: string | number, width: string | number }>\`
+          heigh: ${fn}px;
+          width: ${fn2}px;
+        \`;
+      `;
+      expect(await transform(src, withFlowDisabled)).toBe(expected);
+    });
+
+    it("should not add theme to styled components types", async () => {
+      const fn = "${(p) => p.height * 2}";
+      const fn2 = "${(p) => p.theme.width * 2}";
+      const src = dedent`
+        export const Container = styled.span\`
+          heigh: ${fn}px;
+          width: ${fn2}px;
+        \`;
+      `;
+      const expected = dedent`
+        export const Container = styled.span<{ height: number }>\`
+          heigh: ${fn}px;
+          width: ${fn2}px;
+        \`;
+      `;
+      expect(await transform(src, withFlowDisabled)).toBe(expected);
+    });
+
+    it("should infer optional properties", async () => {
+      const fn = "${({ color = 'red' }) => color}";
+      const src = dedent`
+        export const StyledContainer = styled.div\`
+          color: ${fn};
+        \`;
+      `;
+      const expected = dedent`
+        export const StyledContainer = styled.div<{ color?: string }>\`
+          color: ${fn};
+        \`;
+      `;
+      expect(await transform(src, withFlowDisabled)).toBe(expected);
+    });
+
+    it("should infer whether a prop is being used as a number", async () => {
+      const fn = "${(props) => props.height - 1}";
+      const src = dedent`
+        export const StyledContainer = styled.div\`
+          height: ${fn};
+        \`;
+      `;
+      const expected = dedent`
+        export const StyledContainer = styled.div<{ height: number }>\`
+          height: ${fn};
+        \`;
+      `;
+      expect(await transform(src, withFlowDisabled)).toBe(expected);
+    });
+
+    it("should infer whether a prop is being used as a number in object pattern", async () => {
+      const fn = "${({ margin = 1 }) => `${margin}px`}";
+      const src = dedent`
+        export const StyledContainer = styled.div\`
+          height: ${fn};
+        \`;
+      `;
+      const expected = dedent`
+        export const StyledContainer = styled.div<{ margin?: number }>\`
+          height: ${fn};
+        \`;
+      `;
+      expect(await transform(src, withFlowDisabled)).toBe(expected);
+    });
+
+    it("should infer whether a prop is being used as a number + optionality when conditional", async () => {
+      const fn = "${(props) => props.height ? props.height - 1 : 0}";
+      const src = dedent`
+        export const StyledContainer = styled.div\`
+          height: ${fn};
+        \`;
+      `;
+      const expected = dedent`
+        export const StyledContainer = styled.div<{ height?: number }>\`
+          height: ${fn};
+        \`;
+      `;
+      expect(await transform(src, withFlowDisabled)).toBe(expected);
+    });
+
+    it("should move the types from explicit declaration from variable to type parameter", async () => {
+      const fn = "${(props) => props.height ? props.height - 1 : 0}";
+      const src = dedent`
+        export const StyledContainer: ComponentType<{ height?: number }> = styled.div\`
+          height: ${fn};
+        \`;
+      `;
+      const expected = dedent`
+        export const StyledContainer = styled.div<{
+          height?: number;
+        }>\`
+          height: ${fn};
+        \`;
+      `;
+      expect(await transform(src, withFlowDisabled)).toBe(expected);
+    });
+
+    it("should assign `any` to styled type parameter if the variable has a weird type", async () => {
+      const fn = "${(props) => props.height ? props.height - 1 : 0}";
+      const src = dedent`
+        export const StyledContainer: Papaya = styled.div\`
+          height: ${fn};
+        \`;
+      `;
+      const expected = dedent`
+        export const StyledContainer = styled.div<any>\`
+          height: ${fn};
+        \`;
+      `;
+      expect(await transform(src, withFlowDisabled)).toBe(expected);
+    });
+
+    it("should add type parameter to css tagged template expression if there are functions inside it", async () => {
+      const fn = "${({ height }) => height ? height - 1 : 0}";
+      const src = dedent`
+        export const extraStyles = css\`
+          height: ${fn};
+        \`;
+      `;
+      const expected = dedent`
+        export const extraStyles = css<any>\`
+          height: ${fn};
+        \`;
+      `;
+      expect(await transform(src, withFlowDisabled)).toBe(expected);
+    });
+
+    it("should not add type parameter to css tagged template expression for simple styles", async () => {
+      const src = dedent`
+        export const extraStyles = css\`
+          height: 100px;
+        \`;
+      `;
+      expect(await transform(src, withFlowDisabled)).toBe(src);
     });
   });
 

@@ -7,6 +7,9 @@ export type State = {
   // Set this flag if utility types were encountered, and an import should be added
   usedUtils: boolean;
 
+  // React types to be explicitly added to the imports
+  reactImports: Set<string>;
+
   // Config is used to store immutable configuration
   readonly config: {
     // The path of the current file that is being converted

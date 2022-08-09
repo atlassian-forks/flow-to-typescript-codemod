@@ -18,7 +18,6 @@ const PRAGMA_BYTES = 5000;
 export enum FlowFileType {
   FLOW,
   NO_FLOW,
-  NO_ANNOTATION,
 }
 
 export type FlowFileList = Array<{ filePath: string; fileType: FlowFileType }>;
@@ -33,8 +32,7 @@ export type FlowFileList = Array<{ filePath: string; fileType: FlowFileType }>;
 export function findFlowFilesAsync(
   rootDirectory: string,
   ignoredDirectories: Array<string>,
-  reporter: MigrationReporter,
-  stripPathsForIgnore: boolean
+  reporter: MigrationReporter
 ): Promise<FlowFileList> {
   return new Promise((_resolve, _reject) => {
     // Tracks whether or not we have rejected our promise.
@@ -67,12 +65,7 @@ export function findFlowFilesAsync(
         }
         // Process every file name that we got from reading the directory.
         for (let i = 0; i < fileNames.length; i++) {
-          processFilePath(
-            directory,
-            fileNames[i],
-            reporter,
-            stripPathsForIgnore
-          );
+          processFilePath(directory, fileNames[i], reporter);
         }
         // We are done with this async task.
         done();
@@ -86,8 +79,7 @@ export function findFlowFilesAsync(
     function processFilePath(
       directory: string,
       fileName: string,
-      reporter: MigrationReporter,
-      stripPathsForIgnore: boolean
+      reporter: MigrationReporter
     ) {
       // If we were rejected then we should not continue.
       if (rejected === true) {
@@ -97,12 +89,8 @@ export function findFlowFilesAsync(
       waiting++;
       // Get the file path for this file.
       const filePath = path.join(directory, fileName);
-      // ignore doesn't handle relative paths, so strip them. This does not work in all edge cases so is behind a flag
-      const correctedPath = stripPathsForIgnore
-        ? filePath.replace(/^(?:\.\.\/)+/, "")
-        : filePath;
-      // ensure that path is valid so that ignore check doesn't throw
-      if (ignore.isPathValid(correctedPath) && ig.ignores(correctedPath)) {
+      // Check whether file should be skipped
+      if (ig.ignores(filePath)) {
         done();
         return;
       }
@@ -122,7 +110,7 @@ export function findFlowFilesAsync(
           // Otherwise if this is a JavaScript file...
           if (fileName.endsWith(".js") || fileName.endsWith(".jsx")) {
             // Then process the file path as JavaScript.
-            processJavaScriptFilePath(filePath, stats.size, reporter);
+            processJavaScriptFilePath(filePath, stats.size);
           }
         }
         // We are done with this async task
@@ -134,11 +122,7 @@ export function findFlowFilesAsync(
      * Check if a file path really is a Flow file by looking for the @flow
      * header pragma.
      */
-    function processJavaScriptFilePath(
-      filePath: string,
-      fileByteSize: number,
-      reporter: MigrationReporter
-    ) {
+    function processJavaScriptFilePath(filePath: string, fileByteSize: number) {
       // If we were rejected then we should not continue.
       if (rejected === true) {
         return;
@@ -159,17 +143,8 @@ export function findFlowFilesAsync(
           if (error) {
             return reject(error);
           }
-          // If the buffer has the @flow pragma then add the file path to our
-          // final file paths array.
-          if (buffer.includes("@flow")) {
-            filePaths.push({ filePath, fileType: FlowFileType.FLOW });
-          } else if (buffer.includes("@noflow")) {
-            filePaths.push({ filePath, fileType: FlowFileType.NO_FLOW });
-            reporter.foundNoFlowAnnotation(filePath);
-          } else {
-            filePaths.push({ filePath, fileType: FlowFileType.NO_ANNOTATION });
-            reporter.foundNonFlowfile(filePath);
-          }
+
+          filePaths.push({ filePath, fileType: FlowFileType.FLOW });
           // Close the file.
           fs.close(file, (error) => {
             if (error) {

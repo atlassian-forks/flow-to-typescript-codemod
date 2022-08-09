@@ -65,9 +65,27 @@ export function annotateParamsWithFlowTypeAtPos(
 
   if (state.config.disableFlow) {
     for (const param of params) {
-      if (param.type === "Identifier" && !param.typeAnnotation) {
-        param.typeAnnotation = t.tsTypeAnnotation(t.tsUnknownKeyword());
-        reporter.disableFlowCheck(state.config.filePath, param.loc!);
+      const parent = path.findParent(
+        (parentPath) =>
+          t.isTaggedTemplateExpression(parentPath.node) &&
+          t.isMemberExpression(parentPath.node.tag) &&
+          (t.isIdentifier(parentPath.node.tag.object, { name: "styled" }) ||
+            t.isIdentifier(parentPath.node.tag.object, { name: "styled2" }))
+      );
+
+      if (
+        param.type === "Identifier" &&
+        !param.typeAnnotation &&
+        parent === null
+      ) {
+        const isNewPromise =
+          t.isNewExpression(path.parent) &&
+          t.isIdentifier(path.parent.callee, { name: "Promise" });
+
+        if (!isNewPromise) {
+          param.typeAnnotation = t.tsTypeAnnotation(t.tsUnknownKeyword());
+          reporter.disableFlowCheck(state.config.filePath, param.loc!);
+        }
       }
     }
 

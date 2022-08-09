@@ -9,7 +9,7 @@ type OmitDefaultProps<T, D> = Omit<T, keyof D> &
   Partial<Pick<T, Extract<keyof T, keyof D>>> &
   Partial<Pick<D, Extract<keyof D, keyof T>>>;
 
-type HasComponentProps<T, D extends unknown = DefaultProps<T>> = T extends (
+type HasComponentProps<T, D = DefaultProps<T>> = T extends (
   prop: infer P
 ) => React.ReactElement
   ? OmitDefaultProps<P, D>
@@ -44,4 +44,8 @@ export declare namespace Flow {
     O extends Record<string, any>,
     F extends (...args: any[]) => any
   > = { [P in keyof O]: ReturnType<F> };
+
+  type TupleMap<T, F extends (...args: any[]) => any> = {
+    [K in keyof T]: ReturnType<F>;
+  };
 }

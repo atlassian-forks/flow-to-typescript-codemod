@@ -51,6 +51,18 @@ export function transformTypeAnnotations({
         }
       }
 
+      // `(void) => ...` → `() => ...`
+      if (
+        path.parent.type === "Identifier" &&
+        path.parentPath.parent.type === "VariableDeclarator" &&
+        path.node.typeAnnotation?.type === "FunctionTypeAnnotation" &&
+        path.node.typeAnnotation?.params.length === 1 &&
+        path.node.typeAnnotation?.params[0].typeAnnotation?.type ===
+          "VoidTypeAnnotation"
+      ) {
+        path.node.typeAnnotation.params.length = 0;
+      }
+
       // Return types might be transformed differently to detect functional components
       if (
         path.parentPath.type === "ArrowFunctionExpression" ||

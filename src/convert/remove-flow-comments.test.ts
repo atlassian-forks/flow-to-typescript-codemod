@@ -169,4 +169,52 @@ describe("remove-flow-pragmas", () => {
 
     expect(await transform(src)).toEqual(expected);
   });
+
+  it("Remove flow comment from arrow function expression", async () => {
+    const expected = dedent`
+      export default () => 1;
+    `;
+
+    const src = dedent`
+      export default () => /* $FlowFixMe[incompatible-call] added */ 1;
+    `;
+
+    expect(await transform(src)).toEqual(expected);
+  });
+
+  it("Remove flow comments from jsx", async () => {
+    const expected = dedent`
+    const AsyncSelectFilterConfigReference = () => {
+      const [value, setValue] = useState({});
+  
+      return (
+          <RefinementBar
+              fieldConfig={CONFIG}
+              irremovableKeys={Object.keys(CONFIG)}
+              onChange={(v) => setValue(v)}
+              value={value}
+          />
+      );
+    };
+    `;
+
+    const src = dedent`
+    const AsyncSelectFilterConfigReference = () => {
+      const [value, setValue] = useState({});
+  
+      return (
+          <RefinementBar
+              // $FlowFixMe - EM-1910
+              fieldConfig={CONFIG}
+              irremovableKeys={Object.keys(CONFIG)}
+              // $FlowFixMe - EM-1910
+              onChange={(v) => setValue(v)}
+              value={value}
+          />
+      );
+    };
+    `;
+
+    expect(await transform(src)).toEqual(expected);
+  });
 });

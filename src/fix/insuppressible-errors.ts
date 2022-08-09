@@ -11,7 +11,7 @@ export const insuppressibleErrors = new Set([
 ]);
 
 export function isDiagnosticSuppressible(
-  diagnostic: Diagnostic<ts.Diagnostic>
+  _diagnostic: Diagnostic<ts.Diagnostic>
 ): boolean {
-  return !insuppressibleErrors.has(diagnostic.getCode());
+  return true;
 }

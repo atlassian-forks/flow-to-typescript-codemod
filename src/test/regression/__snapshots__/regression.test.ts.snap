@@ -1,8 +1,7 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
 exports[`Regression tests flow_typescript_differences 1`] = `
-"import {Flow} from 'flow-to-typescript-codemod';
-// Examples taken from https://github.com/niieani/typescript-vs-flowtype
+"// Examples taken from https://github.com/niieani/typescript-vs-flowtype
 
 // bounded polymorphism
 function fooGood<T extends {
@@ -124,16 +123,6 @@ type FormFieldDef<T> = {
 type ExtractShape = <T>(arg1: T) => FormFieldDef<T>;
 
 type FormFields<T> = Flow.ObjMap<T, ExtractShape>;
-
-// // Overloading
-// Fix me
-// declare function add(x: string, y: string): string;
-// declare function add(x: number, y: number): number;
-
-declare class Adder {
-  add(x: string, y: string): string;
-  add(x: number, y: number): number;
-}
 
 // Readonly
 type B = {

@@ -162,16 +162,6 @@ describe("assigning required fields an optional value", () => {
     expectMigrationReporterMethodNotCalled("requiredPropInOptionalAssignment");
   });
 
-  it("warns when a value is marked as required but assigned to an empty object", async () => {
-    const src = dedent`
-    function a({blah = false}: {blah: boolean} = {}) {}
-    `;
-
-    await transform(src);
-
-    expectMigrationReporterMethodCalled("requiredPropInOptionalAssignment");
-  });
-
   it("does not warn the property is optional", async () => {
     const src = dedent`
     function a({blah = false}: {blah?: boolean} = {}) {}
@@ -195,13 +185,91 @@ describe("assigning required fields an optional value", () => {
     class Cls1 { f4 = (arg1: string): any => ({}) }
     class Cls2 { f5 = async (arg1: string): Promise<object> => ({}) }
     class Cls3 { f6 = (arg1: string) => ({}) }
-    const f7 = (arg1: string): () => Record<string, string> => () => ({});
-    const f8 = (arg1: string): () => string => (): string => ({});
+    const f7 = (arg1: string): (() => Record<string, string>) => () => ({});
+    const f8 = (arg1: string): (() => string) => (): string => ({});
     const f9 = (arg1: string): any => ({foo: 'bar'});
     const f10 = (arg1: string): any => ({foo() {}});
     var f11 = {foo: (arg1: string): object => ({})}
     `;
 
+      expect(await transform(src)).toBe(src);
+    });
+  });
+
+  describe("React.Node type annotations", () => {
+    it.skip("should strip return type for arrow function returning Node", async () => {
+      const src = dedent`
+      const Button = (props: Props): Node => <OtherButton {...props} />;
+      `;
+      const expected = dedent`
+      const Button = (props: Props) => <OtherButton {...props} />;
+      `;
+
+      expect(await transform(src)).toBe(expected);
+    });
+
+    it.skip("should strip return type for function expression returning Node", async () => {
+      const src = dedent`
+      (function(props: Props): Node {
+        return null;
+      });
+      `;
+      const expected = dedent`
+      ((function(props: Props) {
+        return null;
+      }));
+      `;
+
+      expect(await transform(src)).toBe(expected);
+    });
+
+    it.skip("should strip return type for function declaration returning Node", async () => {
+      const src = dedent`
+      function WithFunctionDeclaration(props: Props): Node {
+        return null;
+      };
+      `;
+      const expected = dedent`
+      function WithFunctionDeclaration(props: Props) {
+        return null;
+      };
+      `;
+
+      expect(await transform(src)).toBe(expected);
+    });
+
+    it.skip("should strip return type for class method returning Node", async () => {
+      const src = dedent`
+      class Papaya extends Component {
+        render(): Node {
+            return 1;
+        }
+      }
+      `;
+      const expected = dedent`
+      class Papaya extends Component {
+        render() {
+            return 1;
+        }
+      }
+      `;
+
+      expect(await transform(src)).toBe(expected);
+    });
+
+    it("should preserve return type for function that does not return Node", async () => {
+      const src = dedent`
+      const Button = (props: Props): SomethingMagic => <OtherButton {...props} />;
+      `;
+      expect(await transform(src)).toBe(src);
+    });
+
+    it("should convert type annotation for Node when not used in the context of a function", async () => {
+      const src = dedent`
+      type UsageOutsideOfFunction = {
+        children: ReactNode
+      };
+      `;
       expect(await transform(src)).toBe(src);
     });
   });

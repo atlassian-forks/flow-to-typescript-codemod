@@ -30,6 +30,19 @@ export const functionVisitor = <
   state,
 }: FunctionVisitorProps) => ({
   enter(path: NodePath<TNodeType>) {
+    // Remove return type annotations for components (functions) that are explicitly
+    // annotated as `Node` and let TypeScript infer it as `JSX.Element`
+    const { returnType } = path.node;
+    if (
+      returnType != null &&
+      t.isTypeAnnotation(returnType) &&
+      t.isGenericTypeAnnotation(returnType.typeAnnotation) &&
+      t.isIdentifier(returnType.typeAnnotation.id) &&
+      returnType.typeAnnotation.id.name === "Node"
+    ) {
+      path.node.returnType = null;
+    }
+
     // Add Flow’s inferred type for all unannotated function parameters...
 
     // `function f(x, y, z)` → `function f(x: any, y: any, z: any)`
@@ -37,6 +50,14 @@ export const functionVisitor = <
     // TypeScript can’t infer unannotated function parameters unlike Flow. We accept lower
     // levels of soundness in type files. We’ll manually annotate non-test files.
     if (state.config.isTestFile) {
+      // We don't want `new Promise((resolve, reject) => ...)` to have explicit types for params.
+      const isNewPromise =
+        t.isNewExpression(path.parent) &&
+        t.isIdentifier(path.parent.callee, { name: "Promise" });
+      if (isNewPromise) {
+        return;
+      }
+
       for (const param of path.node.params) {
         if (!(param as t.Identifier).typeAnnotation) {
           (param as t.Identifier).typeAnnotation = t.tsTypeAnnotation(
@@ -104,51 +125,24 @@ export const functionVisitor = <
     for (const param of path.node.params.slice().reverse()) {
       let paramIsOptional = false;
 
-      if (param.type === "AssignmentPattern") {
-        paramIsOptional = true;
-        if (param.left.type === "Identifier" && param.left.optional) {
-          param.left.optional = false;
-        } else if (
-          t.isObjectExpression(param.right) &&
-          t.isObjectPattern(param.left)
-        ) {
-          if (param.right.properties.length === 0) {
-            // If we are assigning a param to an empty object: function f({stuff}: {stuff: Type} = {})
-            // check if the type annotation assigned to the left is an object type annotation
-            if (
-              t.isTypeAnnotation(param.left.typeAnnotation) &&
-              t.isObjectTypeAnnotation(param.left.typeAnnotation.typeAnnotation)
-            ) {
-              // if it is go through each property and check if any aren't optional
-              for (const prop of param.left.typeAnnotation.typeAnnotation
-                .properties) {
-                // for each required property report a warning
-                if (t.isObjectTypeProperty(prop) && !prop.optional) {
-                  reporter.requiredPropInOptionalAssignment(
-                    state.config.filePath,
-                    param.loc!
-                  );
-                }
-              }
-            }
-          }
-        }
-      }
-      // This next block is somewhat complicated, but basically inspects the parameters to
-      // determine what combination of optional / null / undefined they should be.
-      // Flow and TypeScript handle optional parameters differently, and in TS we need to make sure
-      // an optional parameter is not followed by a non-optional one since in TS optional can be omitted.
-      if (param.type === "Identifier" && param.typeAnnotation) {
-        const isNullable =
-          param.typeAnnotation.type === "TypeAnnotation" &&
-          param.typeAnnotation.typeAnnotation.type === "NullableTypeAnnotation";
-        const hasVoid =
-          param.typeAnnotation.type === "TypeAnnotation" &&
-          param.typeAnnotation.typeAnnotation.type === "UnionTypeAnnotation" &&
-          param.typeAnnotation.typeAnnotation.types.some(
-            (unionType) => unionType.type === "VoidTypeAnnotation"
-          );
-        paramIsOptional = param.optional || isNullable || hasVoid;
+      // NOTE: The code commented below is the root of all evil. Removing it fixes
+      // the types for functions with optional parameters regardless of the order.
+      // The code below is a demon that shall not be unleashed. It's a plague that
+      // mustn't be released.
+
+      // if (param.type === "AssignmentPattern") {
+      //   paramIsOptional = true;
+      //   if (param.left.type === "Identifier" && param.left.optional) {
+      //     param.left.optional = false;
+      //   }
+      // }
+
+      if (param.type === "Identifier") {
+        paramIsOptional =
+          param.optional ||
+          (param.typeAnnotation?.type === "TypeAnnotation" &&
+            param.typeAnnotation?.typeAnnotation.type ===
+              "NullableTypeAnnotation");
       }
 
       if (!paramIsOptional) {
@@ -186,18 +180,6 @@ export const functionVisitor = <
               t.nullLiteralTypeAnnotation(),
               t.genericTypeAnnotation(t.identifier("undefined")),
             ]);
-          } else if (
-            identifier.typeAnnotation.typeAnnotation.type ===
-            "UnionTypeAnnotation"
-          ) {
-            identifier.typeAnnotation.typeAnnotation.types =
-              identifier.typeAnnotation.typeAnnotation.types.filter(
-                (unionType) => unionType.type !== "VoidTypeAnnotation"
-              );
-            identifier.typeAnnotation.typeAnnotation = t.unionTypeAnnotation([
-              identifier.typeAnnotation.typeAnnotation,
-              t.genericTypeAnnotation(t.identifier("undefined")),
-            ]);
           } else {
             identifier.typeAnnotation.typeAnnotation = t.unionTypeAnnotation([
               identifier.typeAnnotation.typeAnnotation,
@@ -213,7 +195,12 @@ export const functionVisitor = <
     if (
       (t.isObjectExpression(path.node.body) &&
         (path.node.returnType || path.node.typeParameters)) ||
-      (path.node.extra?.parenthesized && t.isExpression(path.node.body))
+      (path.node.extra?.parenthesized && t.isExpression(path.node.body)) ||
+      (t.isObjectExpression(path.node.body) &&
+        path.parent?.type === "ExportDefaultDeclaration") ||
+      // Force parenthesis in any arrow function returning an object. Recast and Prettier should get rid of redundant ones
+      (t.isObjectExpression(path.node.body) &&
+        path.node.type === "ArrowFunctionExpression")
     ) {
       path.node.extra = { ...path.node.extra, parenthesized: false };
       path.node.body = t.parenthesizedExpression(path.node.body);

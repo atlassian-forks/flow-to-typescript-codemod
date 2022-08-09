@@ -123,6 +123,8 @@ const stateBuilder = (
   return {
     hasJsx: false,
     usedUtils: false,
+    // @ts-expect-error The definition for `DeepPartialOverride` should not apply to native types
+    reactImports: new Set<string>(),
     ...stateOverrides,
     config: {
       filePath,
