@@ -189,7 +189,7 @@ This project was built on top of
 [Stripe's TypeScript Codemod](https://github.com/stripe/typescript-migration-codemod). We're thankful for the Stripe team, for providing the codemod and that they have met up with us to share their migration journey.
 
 [Airtable's TypeScript Codemod](https://github.com/Airtable/typescript-migration-codemod). We're
-thankful for the Airtable team ([Caleb Meredith](https://github.com/calebmer)
+thankful for the Airtable team, for doing the groundwork and making it available to all.
 
 ## 📎 License
 
