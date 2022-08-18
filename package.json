@@ -3,7 +3,7 @@
     "version": "0.0.0",
     "private": true,
     "description": "Atlassians fork of the Stripe codemod for converting Flow to TypeScript.",
-    "repository": "https://github.com/atlassian-archive/flow-to-typescript-codemod",
+    "repository": "https://github.com/atlassian-forks/flow-to-typescript-codemod",
     "license": "MIT",
     "author": "Atlassian",
     "types": "./flow.d.ts",

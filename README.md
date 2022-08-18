@@ -4,18 +4,15 @@
     alt="TypeScript Llama"
     width="160px"
   />
-  <h1>Flow to TypeScript Codemod</h1>
+  <h1>Flow to TypeScript Codemod (Fork from Stripe)</h1>
   <br />
 </div>
 
-> <img src="https://stripe.dev/images/badges/archived.png" width="250">
->
 > This project is provided as-is and is not actively maintained.
+> The majority of work has been done by Stripe and Airtable. We made adjustments to make it work well with 
+> Atlassian codebases.
 
-For more background on Stripe's TypeScript migration, check out our
-[blog post](https://stripe.com/blog/migrating-to-typescript)!
-
-This is the codemod Stripe used to migrate 4m+ lines of [Flow](https://flow.org/en/) to
+This is the codemod Atlassian used to migrate 4m+ lines of [Flow](https://flow.org/en/) to
 [TypeScript](https://www.typescriptlang.org/). It has a few commands to automate the separate steps
 of a migration:
 
@@ -39,7 +36,7 @@ applied.
 
 ```bash
 # Clone the repository
-git clone https://github.com/stripe-archive/flow-to-typescript-codemod.git
+git clone https://github.com/atlassian-forks/flow-to-typescript-codemod.git
 cd flow-to-typescript-codemod/
 
 # Install dependencies
@@ -118,19 +115,8 @@ yarn typescriptify convert --write --path <path to source directory> --target <w
 
 ### Utility types
 
-In cases where the conversion requires a complicated type, the codemod will insert an import for
-utility types:
-
-```ts
-import { Flow } from 'flow-to-typescript-codemod';
-Flow.Diff<A, B>;
-```
-
 These types are defined in `./flow.d.ts`, and you'll need to do some setup to make the import work.
-At Stripe, we published a version of this package internally so it could be installed in each
-codebase and the types would be available. You could also copy `flow.d.ts` into your project and use
-[paths](https://www.typescriptlang.org/docs/handbook/module-resolution.html#path-mapping) to resolve
-the import.
+At Atlassian, we copied the `flow.d.ts` into our globals as a namespace.
 
 ## 📌 Advanced usage
 
@@ -199,10 +185,11 @@ We've compiled our [notes](NOTES.md) documenting the complex type conversions.
 ## 🎨 Prior art
 
 This project was built on top of
+
+[Stripe's TypeScript Codemod](https://github.com/stripe/typescript-migration-codemod). We're thankful for the Stripe team, for providing the codemod and that they have met up with us to share their migration journey.
+
 [Airtable's TypeScript Codemod](https://github.com/Airtable/typescript-migration-codemod). We're
-thankful for the Airtable team ([Caleb Meredith](https://github.com/calebmer) and
-[Andrew Wang](https://github.com/umbrant)) for open-sourcing their work, and hope others can
-similarly benefit from our project.
+thankful for the Airtable team ([Caleb Meredith](https://github.com/calebmer)
 
 ## 📎 License
 
@@ -218,10 +205,11 @@ If you have questions about this code or our migration, you can reach out to mem
 
 <table>
   <tr>
-    <td align="center"><a href="https://github.com/tylerkrupicka"><img src="https://avatars.githubusercontent.com/u/5761061?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Tyler Krupicka</b></sub></a><br /></td>
-    <td align="center"><a href="https://github.com/ken-kenware"><img src="https://avatars.githubusercontent.com/u/3946841?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Ken Deland</b></sub></a><br /></td>
-    <td align="center"><a href="https://github.com/RussGlover"><img src="https://avatars.githubusercontent.com/u/90730502?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Russill Glover</b></sub></a><br /></td>
-    <td align="center"><a href="https://github.com/benbayard"><img src="https://avatars.githubusercontent.com/u/1026035?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Ben Bayard</b></sub></a><br /></td>
-    <td align="center"><a href="https://github.com/alunny"><img src="https://avatars.githubusercontent.com/u/48361?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Andrew Lunny</b></sub></a><br /></td>
+    <td align="center"><a href="https://github.com/haskellcamargo"><img src="https://avatars.githubusercontent.com/u/7553006?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Marcelo Carmago</b></sub></a><br /></td>
+    <td align="center"><a href="https://github.com/AllySummers"><img src="https://avatars.githubusercontent.com/u/9024018?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Ally Summers</b></sub></a><br /></td>
+    <td align="center"><a href="https://github.com/albertogasparin"><img src="https://avatars.githubusercontent.com/u/84136?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Alberto Gasparin</b></sub></a><br /></td>
+    <td align="center"><a href="https://github.com/tung-dang"><img src="https://avatars.githubusercontent.com/u/138803?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Tung Dang</b></sub></a><br /></td>
+    <td align="center"><a href="https://github.com/adamtay"><img src="https://avatars.githubusercontent.com/u/3335306?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Adam Tay</b></sub></a><br /></td>
+    <td align="center"><a href="https://github.com/meandmax"><img src="https://avatars.githubusercontent.com/u/6309638?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Max Heinz</b></sub></a><br /></td>
   </tr>
 </table>
